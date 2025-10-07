@@ -1,0 +1,25 @@
+{
+  "name": "telegram-struk-bot-db",
+  "version": "1.0.0",
+  "description": "Bot Telegram untuk membuat struk Villa Parfum dengan database",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "keywords": [
+    "telegram",
+    "bot",
+    "mysql",
+    "crud"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "dotenv": "^16.6.1",
+    "express": "^4.21.2",
+    "mysql2": "^3.15.1",
+    "node-cron": "^3.0.3",
+    "node-telegram-bot-api": "^0.64.0",
+    "puppeteer": "^21.11.0"
+  }
+}
