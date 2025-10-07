@@ -2,7 +2,7 @@
 require('dotenv').config();
 const express = require('express');
 const TelegramBot = require('node-telegram-bot-api');
-const puppeteer = require('puppeteer');
+// const puppeteer = require('puppeteer'); // Dependensi Puppeteer dihapus
 const mysql = require('mysql2/promise');
 
 // Konfigurasi dari file .env
@@ -168,7 +168,6 @@ async function generateDailyReport(date = new Date(), storeId) {
         const totalTransactions = rows[0].totalTransactions || 0;
 
         // --- BAGIAN YANG DIPERBAIKI ---
-        // HAPUS query marginData yang lama dan tidak akurat.
         // GANTI dengan query baru yang hanya mengambil total modal (biaya).
         const [costData] = await connection.execute(`
             SELECT SUM(ti.price_vp * ti.quantity) as totalCost 
@@ -271,31 +270,7 @@ async function generateRegionalReport(date = new Date(), regionId) {
 }
 
 // --- 5. TEMPLATE HTML & RECEIPT ---
-function getReceiptHtml(invoiceData, storeName) {
-    const formatNumber = (num) => new Intl.NumberFormat('id-ID').format(num);
-    const tgl = new Date().toLocaleDateString('id-ID', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' });
-    let itemsHtml = '';
-    
-    invoiceData.items.forEach(item => {
-        const pricePerUnitConsumer = item.totalPriceConsumer / item.qty;
-        itemsHtml += `<div class="item"><div class="item-name">${item.name}</div><div class="item-details"><span>${item.qty} ${item.unit} x ${formatNumber(pricePerUnitConsumer)}</span><span>${formatRupiah(item.totalPriceConsumer)}</span></div></div>`;
-    });
-    const totalAmount = invoiceData.items.reduce((acc, item) => acc + item.totalPriceConsumer, 0);
-
-    return `
-    <!DOCTYPE html><html><head><style>body{font-family:'Courier New',Courier,monospace;width:58mm;font-size:10px;line-height:1.4;color:black;background:white;padding:5px;box-sizing:border-box;margin:0;}.text-center{text-align:center;}.font-bold{font-weight:bold;}.mb-2{margin-bottom:8px;}.mt-2{margin-top:8px;}.header,.footer{border-bottom:1px dashed black;padding-bottom:5px;}.footer{border-top:1px dashed black;border-bottom:none;padding-top:5px;}.info p,.item{margin:0;}.item{margin-bottom:4px;}.item-details{display:flex;justify-content:space-between;}.total{display:flex;justify-content:space-between;font-weight:bold;font-size:12px;margin-top:8px;}</style></head>
-    <body><div class="text-center header mb-2"><h1 style="font-size:14px;margin:0;">VillaParfum</h1><p>${storeName}</p></div><div class="info mb-2"><p>No: ${invoiceData.invoiceNumber}</p><p>Tgl: ${tgl}</p><p>Kasir: ${invoiceData.cashierName || 'Admin'}</p></div><div class="items-list" style="border-top:1px dashed black;padding-top:5px;">${itemsHtml}</div><div style="border-top:1px dashed black;"><div class="total"><span>TOTAL</span><span>${formatRupiah(totalAmount)}</span></div></div><div class="text-center footer mt-2"><p>Bayar: ${invoiceData.paymentMethod}</p><p class="font-bold mt-2">Terima Kasih!</p></div></body></html>`;
-}
-
-async function generateReceiptImage(htmlContent) {
-    const browser = await puppeteer.launch({ headless: "new", args: ['--no-sandbox', '--disable-setuid-sandbox'] });
-    const page = await browser.newPage();
-    await page.setViewport({ width: 219, height: 200, deviceScaleFactor: 2 });
-    await page.setContent(htmlContent, { waitUntil: 'domcontentloaded' });
-    const imageBuffer = await page.screenshot({ type: 'png', fullPage: true });
-    await browser.close();
-    return imageBuffer;
-}
+// Fungsi getReceiptHtml dan generateReceiptImage dihapus karena tidak menggunakan Puppeteer.
 
 // --- 6. KEYBOARD & ACCESS CONTROL ---
 function getMainMenuKeyboard(access) {
@@ -535,7 +510,7 @@ async function handleConversationState(chatId, text, state, access) {
             state.step = 'CONFIRM_SAVE';
             
             // --- KONFIRMASI FINAL DENGAN PERHITUNGAN SELISIH ---
-            let finalSummary = `📝 *KONFIRMASI STRUK*\n\nKasir: *${state.data.cashierName}*\n------------------------------------\n`;
+            let finalSummary = `📝 *KONFIRMASI TRANSAKSI*\n\nKasir: *${state.data.cashierName}*\n------------------------------------\n`;
             let totalModalFinal = 0;
             state.data.items.forEach(item => {
                 finalSummary += `• ${item.name} (${item.qty} ${item.unit})\n`;
@@ -556,23 +531,22 @@ async function handleConversationState(chatId, text, state, access) {
 
         case 'CONFIRM_SAVE':
             if (text === '✅ Ya') {
-                bot.sendMessage(chatId, "⏳ Menyimpan dan membuat struk...");
+                // Notif tunggu
+                bot.sendMessage(chatId, "⏳ Menyimpan transaksi...");
+                
                 state.data.invoiceNumber = `VP-${new Date().toISOString().slice(2, 10).replace(/-/g, "")}-${Date.now().toString().slice(-4)}`;
-                const activeStore = await getStoreInfo(access.user.active_store_id);
 
                 try {
-                    // --- LOGIKA PENTING: DISTRIBUSI HARGA JUAL ---
-                    // Ini dilakukan agar data tetap sesuai dengan struktur database Anda
+                    // --- LOGIKA PENTING: DISTRIBUSI HARGA JUAL (TETAP DIPERLUKAN UNTUK DATABASE) ---
                     const totalModalTrx = state.data.items.reduce((acc, item) => acc + (item.qty * item.priceVp), 0);
                     const totalConsumerPaymentTrx = state.data.totalConsumerPayment;
 
-                    // Mencegah pembagian dengan nol jika modal 0
                     const processedItems = totalModalTrx > 0 ? state.data.items.map(item => {
                         const itemModal = item.qty * item.priceVp;
                         // Alokasikan pendapatan ke item secara proporsional berdasarkan modalnya
                         const itemRevenueShare = (itemModal / totalModalTrx) * totalConsumerPaymentTrx;
                         return { ...item, totalPriceConsumer: itemRevenueShare };
-                    }) : state.data.items.map(item => ({...item, totalPriceConsumer: 0})); // Jika modal 0, harga jual juga 0
+                    }) : state.data.items.map(item => ({...item, totalPriceConsumer: 0}));
 
                     const transactionData = {
                         ...state.data,
@@ -580,20 +554,19 @@ async function handleConversationState(chatId, text, state, access) {
                     };
 
                     const { totalAmount } = await saveTransaction(transactionData, access.user.active_store_id, access.user.id);
-                    bot.sendMessage(chatId, `✅ Transaksi \`${state.data.invoiceNumber}\` berhasil disimpan. Membuat gambar struk...`, { parse_mode: 'Markdown' });
-
-                    const receiptHtml = getReceiptHtml(transactionData, activeStore.name);
-                    const receiptImage = await generateReceiptImage(receiptHtml);
                     
-                    await bot.sendPhoto(chatId, receiptImage, { 
-                        caption: `🧾 Struk untuk Invoice: \`${state.data.invoiceNumber}\`\nTotal: ${formatRupiah(totalAmount)}`, 
-                        parse_mode: 'Markdown', 
-                        reply_markup: getMainMenuKeyboard(access) 
-                    });
+                    // --- HANYA KIRIM NOTIFIKASI BERHASIL DISIMPAN ---
+                    bot.sendMessage(chatId, 
+                        `✅ Transaksi \`${state.data.invoiceNumber}\` (Total: ${formatRupiah(totalAmount)}) berhasil disimpan di database.`, 
+                        { 
+                            parse_mode: 'Markdown', 
+                            reply_markup: getMainMenuKeyboard(access) 
+                        }
+                    );
 
                 } catch (error) {
-                    console.error('❌ Gagal pada tahap pembuatan struk:', error);
-                    bot.sendMessage(chatId, "⚠️ Transaksi *berhasil disimpan*, namun *gagal membuat gambar struk*. Silakan cek laporan harian untuk konfirmasi.", { 
+                    console.error('❌ Gagal menyimpan transaksi:', error);
+                    bot.sendMessage(chatId, "⚠️ Gagal menyimpan transaksi. Silakan coba lagi atau hubungi admin.", { 
                         parse_mode: 'Markdown',
                         reply_markup: getMainMenuKeyboard(access) 
                     });
@@ -604,7 +577,7 @@ async function handleConversationState(chatId, text, state, access) {
             delete userState[chatId];
             break;
         
-        // ... (Kode untuk 'EDIT_CASHIER' sampai 'SEARCH_TRANSACTION' tetap sama, tidak perlu diubah) ...
+        // ... (Kode untuk 'EDIT_CASHIER' sampai 'SEARCH_TRANSACTION' tetap sama) ...
         case 'EDIT_CASHIER':
             state.currentData.cashier_name = text.trim();
             state.step = 'EDIT_MENU';
